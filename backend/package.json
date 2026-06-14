@@ -1,0 +1,23 @@
+{
+  "name": "salesforce-agentassist-backend",
+  "version": "0.1.0",
+  "description": "Node and Express REST API for Salesforce AgentAssist",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --no-warnings --watch src/server.js",
+    "start": "node --no-warnings src/server.js",
+    "db:setup": "node scripts/setup-postgres.js",
+    "db:reset-local": "node --no-warnings scripts/reset-local-db.js",
+    "test": "node --no-warnings --import ./setup-env.js --test --test-concurrency=1"
+  },
+  "dependencies": {
+    "compression": "^1.7.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.1",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "pg": "^8.13.1"
+  }
+}

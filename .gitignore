@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.local
+npm-debug.log*
+.npm-cache/
+.codex/
+.push-repo*/
+
+backend/data/
+frontend/dist/
+
+.DS_Store
+Thumbs.db
+
+codex_prompt.docx
+Salesforce AgentAssist*.pdf
