@@ -7,6 +7,8 @@ services:
     startCommand: npm start
     healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: 22
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
@@ -15,9 +17,29 @@ services:
         value: "true"
       - key: FRONTEND_ORIGIN
         sync: false
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
       - key: SALESFORCE_ENABLED
         value: "true"
       - key: SALESFORCE_MODE
-        value: MOCK
+        value: REAL
+      - key: SALESFORCE_LOGIN_URL
+        value: https://login.salesforce.com
+      - key: SALESFORCE_CLIENT_ID
+        sync: false
+      - key: SALESFORCE_CLIENT_SECRET
+        sync: false
+      - key: SALESFORCE_USERNAME
+        sync: false
+      - key: SALESFORCE_PASSWORD
+        sync: false
+      - key: SALESFORCE_SECURITY_TOKEN
+        sync: false
       - key: SALESFORCE_API_VERSION
         value: v60.0

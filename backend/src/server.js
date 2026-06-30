@@ -1,7 +1,19 @@
 import dotenv from 'dotenv';
-import app from './app.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendRoot = path.resolve(__dirname, '..');
+const repoRoot = path.resolve(backendRoot, '..');
+
+dotenv.config({ path: path.join(repoRoot, '.env') });
+dotenv.config({ path: path.join(backendRoot, '.env'), override: true });
+
+const { default: app } = await import('./app.js');
+const { ensureSeedData } = await import('./database/bootstrap.js');
+
+await ensureSeedData();
 
 const port = process.env.PORT || 8080;
 

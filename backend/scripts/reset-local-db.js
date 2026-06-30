@@ -16,8 +16,8 @@ try {
   const seed = fs.readFileSync(path.join(backendRoot, 'src', 'database', 'seed.sql'), 'utf8');
   db.exec(schema);
   db.exec('PRAGMA foreign_keys = OFF');
-  db.exec('DELETE FROM api_logs; DELETE FROM ai_insights; DELETE FROM tickets; DELETE FROM orders; DELETE FROM customers;');
-  db.exec("DELETE FROM sqlite_sequence WHERE name IN ('api_logs','ai_insights','tickets','orders','customers')");
+  db.exec('DELETE FROM api_logs; DELETE FROM ai_insights; DELETE FROM tickets; DELETE FROM orders; DELETE FROM customers; DELETE FROM tenants;');
+  db.exec("DELETE FROM sqlite_sequence WHERE name IN ('api_logs','ai_insights','tickets','orders','customers','tenants')");
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(seed);
   console.log('Local SQLite database reset.');

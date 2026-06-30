@@ -1,37 +1,46 @@
 import express from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { validate } from '../middleware/validate.js';
 import { createCustomer, deleteCustomer, getCustomer, getCustomer360, listCustomers, syncContact, updateCustomer } from '../services/customerService.js';
+import { recordAudit } from '../services/auditService.js';
+import { customerSchema } from '../validators/schemas.js';
 
 const router = express.Router();
 
 router.get('/', asyncHandler(async (req, res) => {
-  res.json(await listCustomers());
+  res.json(await listCustomers(req.auth.tenantId));
 }));
 
-router.post('/', asyncHandler(async (req, res) => {
-  const customer = await createCustomer(req.body);
+router.post('/', validate(customerSchema), asyncHandler(async (req, res) => {
+  const customer = await createCustomer(req.auth.tenantId, req.body);
+  await recordAudit({ tenantId: req.auth.tenantId, userId: req.auth.userId, action: 'CUSTOMER_CREATE', entity: 'customer', entityId: customer.id });
   res.status(201).json(customer);
 }));
 
 router.get('/:id', asyncHandler(async (req, res) => {
-  res.json(await getCustomer(req.params.id));
+  res.json(await getCustomer(req.auth.tenantId, req.params.id));
 }));
 
-router.put('/:id', asyncHandler(async (req, res) => {
-  res.json(await updateCustomer(req.params.id, req.body));
+router.put('/:id', validate(customerSchema), asyncHandler(async (req, res) => {
+  const customer = await updateCustomer(req.auth.tenantId, req.params.id, req.body);
+  await recordAudit({ tenantId: req.auth.tenantId, userId: req.auth.userId, action: 'CUSTOMER_UPDATE', entity: 'customer', entityId: customer.id });
+  res.json(customer);
 }));
 
 router.delete('/:id', asyncHandler(async (req, res) => {
-  await deleteCustomer(req.params.id);
+  await deleteCustomer(req.auth.tenantId, req.params.id);
+  await recordAudit({ tenantId: req.auth.tenantId, userId: req.auth.userId, action: 'CUSTOMER_DELETE', entity: 'customer', entityId: req.params.id });
   res.status(204).send();
 }));
 
 router.get('/:id/360', asyncHandler(async (req, res) => {
-  res.json(await getCustomer360(req.params.id));
+  res.json(await getCustomer360(req.auth.tenantId, req.params.id));
 }));
 
 router.post('/:id/sync-contact', asyncHandler(async (req, res) => {
-  res.json(await syncContact(req.params.id));
+  const result = await syncContact(req.auth.tenantId, req.params.id);
+  await recordAudit({ tenantId: req.auth.tenantId, userId: req.auth.userId, action: 'SALESFORCE_CONTACT_SYNC', entity: 'customer', entityId: req.params.id });
+  res.json(result);
 }));
 
 export default router;

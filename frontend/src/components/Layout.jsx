@@ -1,5 +1,6 @@
-import { Activity, CloudLightning, LayoutDashboard, ListChecks, TicketPlus, Users } from 'lucide-react';
+import { Activity, CloudLightning, LayoutDashboard, ListChecks, LogOut, Settings, TicketPlus, Users } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -8,11 +9,18 @@ const nav = [
   { to: '/tickets', label: 'Tickets', icon: ListChecks },
   { to: '/logs', label: 'API Logs', icon: Activity },
   { to: '/salesforce', label: 'Salesforce', icon: CloudLightning },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const onLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <div className="app-shell">
@@ -29,6 +37,15 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
+        <div className="sidebar-footer">
+          <div className="user-chip">
+            <strong>{user?.fullName}</strong>
+            <span className="muted small">{user?.tenantName} · {user?.role}</span>
+          </div>
+          <button className="btn small" type="button" onClick={onLogout}>
+            <LogOut size={15} /> Sign out
+          </button>
+        </div>
       </aside>
       <header className="mobile-header">
         <strong>AgentAssist</strong>
@@ -37,6 +54,7 @@ export function Layout() {
             <option key={item.to} value={item.to}>{item.label}</option>
           ))}
         </select>
+        <button className="btn small" type="button" onClick={onLogout} aria-label="Sign out"><LogOut size={15} /></button>
       </header>
       <main className="main-panel">
         <Outlet />

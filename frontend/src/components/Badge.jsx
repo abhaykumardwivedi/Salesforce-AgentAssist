@@ -12,7 +12,7 @@ const toneMap = {
   IN_PROGRESS: 'tone-purple',
   RESOLVED: 'tone-green',
   CLOSED: 'tone-gray',
-  MOCK: 'tone-teal',
+  LOCAL: 'tone-teal',
   REAL: 'tone-blue',
   ENABLED: 'tone-green',
   DISABLED: 'tone-gray',

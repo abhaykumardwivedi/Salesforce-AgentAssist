@@ -23,6 +23,8 @@ try {
   const seed = fs.readFileSync(path.join(repoRoot, 'docs', 'supabase-seed.sql'), 'utf8');
   await pool.query(schema);
   await pool.query(seed);
+  const { ensureSeedData } = await import('../src/database/bootstrap.js');
+  await ensureSeedData();
   console.log('PostgreSQL schema and seed data applied.');
 } finally {
   await pool.end();
