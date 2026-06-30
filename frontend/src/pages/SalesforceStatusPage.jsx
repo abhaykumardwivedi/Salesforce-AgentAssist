@@ -1,5 +1,6 @@
 import { CloudLightning, KeyRound, PlugZap, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getSalesforceStatus } from '../api/client.js';
 import { Badge } from '../components/Badge.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -18,21 +19,22 @@ export function SalesforceStatusPage() {
 
   return (
     <div className="page">
-      <PageHeader title="Salesforce Status" subtitle="CRM integration mode and configuration state." />
+      <PageHeader title="Salesforce Status" subtitle="CRM integration mode and connection state for this workspace." />
       <div className="grid-4">
-        <StatCard label="Integration" value={status.enabled ? 'Enabled' : 'Disabled'} icon={PlugZap} accent={status.enabled ? 'teal' : 'red'} />
+        <StatCard label="Connection" value={status.connected ? 'Connected' : 'Not connected'} icon={PlugZap} accent={status.connected ? 'teal' : 'red'} />
         <StatCard label="Mode" value={status.mode} icon={CloudLightning} />
-        <StatCard label="Configured" value={status.configured ? 'Yes' : 'No'} icon={KeyRound} accent={status.configured ? 'teal' : 'orange'} />
+        <StatCard label="App Configured" value={status.appConfigured ? 'Yes' : 'No'} icon={KeyRound} accent={status.appConfigured ? 'teal' : 'orange'} />
         <StatCard label="API Version" value={status.apiVersion} icon={ShieldCheck} accent="teal" />
       </div>
       <section className="panel">
         <h2>Connection</h2>
         <div className="grid-2">
-          <Info label="Enabled" value={<Badge value={status.enabled ? 'ENABLED' : 'DISABLED'} />} />
+          <Info label="Status" value={<Badge value={status.connected ? 'CONNECTED' : 'DISCONNECTED'} />} />
           <Info label="Mode" value={<Badge value={status.mode} />} />
-          <Info label="Configured" value={status.configured ? 'Yes' : 'No'} />
+          <Info label="Instance URL" value={status.instanceUrl || 'Not connected'} />
           <Info label="API Version" value={status.apiVersion} />
         </div>
+        <p className="muted small">Manage the Salesforce connection from <Link className="link" to="/settings">Settings</Link>.</p>
       </section>
     </div>
   );

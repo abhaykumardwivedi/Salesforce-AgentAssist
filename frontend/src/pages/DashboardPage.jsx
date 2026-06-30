@@ -1,7 +1,7 @@
-import { Activity, AlertTriangle, CloudLightning, Users } from 'lucide-react';
+import { Activity, AlertTriangle, Bot, CloudLightning, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getCustomers, getLogs, getSalesforceStatus, getTickets } from '../api/client.js';
+import { getAiStatus, getCustomers, getLogs, getSalesforceStatus, getTickets } from '../api/client.js';
 import { Badge } from '../components/Badge.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { StatCard } from '../components/StatCard.jsx';
@@ -12,15 +12,17 @@ export function DashboardPage() {
   const [tickets, setTickets] = useState([]);
   const [logs, setLogs] = useState([]);
   const [status, setStatus] = useState(null);
+  const [aiStatus, setAiStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getCustomers(), getTickets(), getLogs(), getSalesforceStatus()])
-      .then(([customerData, ticketData, logData, salesforceData]) => {
+    Promise.all([getCustomers(), getTickets(), getLogs(), getSalesforceStatus(), getAiStatus()])
+      .then(([customerData, ticketData, logData, salesforceData, aiData]) => {
         setCustomers(customerData);
         setTickets(ticketData);
         setLogs(logData);
         setStatus(salesforceData);
+        setAiStatus(aiData);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -41,6 +43,7 @@ export function DashboardPage() {
         <StatCard label="Open Tickets" value={metrics.openTickets} icon={Activity} accent="teal" />
         <StatCard label="High Priority" value={metrics.urgentTickets} icon={AlertTriangle} accent="orange" />
         <StatCard label="Salesforce" value={status?.enabled ? status.mode : 'Off'} icon={CloudLightning} accent={status?.enabled ? 'teal' : 'red'} />
+        <StatCard label="AI Provider" value={aiStatus?.configured ? aiStatus.provider : 'Local'} icon={Bot} accent={aiStatus?.configured ? 'teal' : 'orange'} />
       </div>
 
       <div className="grid-2">

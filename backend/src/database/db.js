@@ -1,4 +1,3 @@
-import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
@@ -22,6 +21,7 @@ if (dbMode === 'postgres') {
     ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
   });
 } else {
+  const { DatabaseSync } = await import('node:sqlite');
   fs.mkdirSync(dataDir, { recursive: true });
   const dbPath = process.env.DB_PATH || defaultDbPath;
   sqlite = new DatabaseSync(dbPath);

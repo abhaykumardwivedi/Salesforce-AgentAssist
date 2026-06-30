@@ -3,28 +3,29 @@ import { badRequest, conflict, notFound } from '../utils/httpError.js';
 import { getOrCreateCustomerSummary } from './aiService.js';
 import { syncContact as syncSalesforceContact } from './salesforceService.js';
 
-export async function listCustomers() {
-  return all(customerSelect('ORDER BY lower(full_name) ASC'));
+export async function listCustomers(tenantId) {
+  return all(customerSelect('WHERE tenant_id = ? ORDER BY lower(full_name) ASC'), [tenantId]);
 }
 
-export async function getCustomer(id) {
-  const customer = await get(customerSelect('WHERE id = ?'), [Number(id)]);
+export async function getCustomer(tenantId, id) {
+  const customer = await get(customerSelect('WHERE tenant_id = ? AND id = ?'), [tenantId, Number(id)]);
   if (!customer) throw notFound('Customer not found.');
   return customer;
 }
 
-export async function createCustomer(payload) {
+export async function createCustomer(tenantId, payload) {
   validateCustomerPayload(payload);
   const email = normalizeEmail(payload.email);
-  if (await get('SELECT id FROM customers WHERE lower(email) = ?', [email])) {
+  if (await get('SELECT id FROM customers WHERE tenant_id = ? AND lower(email) = ?', [tenantId, email])) {
     throw conflict('A customer with this email already exists.');
   }
   const createdAt = now();
   const result = await run(
     `INSERT INTO customers
-     (full_name, email, phone, company_name, segment, salesforce_contact_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+     (tenant_id, full_name, email, phone, company_name, segment, salesforce_contact_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
     [
+      tenantId,
       payload.fullName.trim(),
       email,
       clean(payload.phone),
@@ -34,20 +35,20 @@ export async function createCustomer(payload) {
       createdAt,
     ],
   );
-  return getCustomer(Number(result.lastInsertRowid));
+  return getCustomer(tenantId, Number(result.lastInsertRowid));
 }
 
-export async function updateCustomer(id, payload) {
+export async function updateCustomer(tenantId, id, payload) {
   validateCustomerPayload(payload);
-  const customer = await getCustomer(id);
+  const customer = await getCustomer(tenantId, id);
   const email = normalizeEmail(payload.email);
-  if (await get('SELECT id FROM customers WHERE lower(email) = ? AND id != ?', [email, customer.id])) {
+  if (await get('SELECT id FROM customers WHERE tenant_id = ? AND lower(email) = ? AND id != ?', [tenantId, email, customer.id])) {
     throw conflict('A customer with this email already exists.');
   }
   await run(
     `UPDATE customers
      SET full_name = ?, email = ?, phone = ?, company_name = ?, segment = ?, updated_at = ?
-     WHERE id = ?`,
+     WHERE tenant_id = ? AND id = ?`,
     [
       payload.fullName.trim(),
       email,
@@ -55,32 +56,33 @@ export async function updateCustomer(id, payload) {
       clean(payload.companyName),
       payload.customerSegment || payload.segment || 'NORMAL',
       now(),
+      tenantId,
       customer.id,
     ],
   );
-  return getCustomer(customer.id);
+  return getCustomer(tenantId, customer.id);
 }
 
-export async function deleteCustomer(id) {
-  const customer = await getCustomer(id);
-  const hasOrders = await get('SELECT id FROM orders WHERE customer_id = ? LIMIT 1', [customer.id]);
-  const hasTickets = await get('SELECT id FROM tickets WHERE customer_id = ? LIMIT 1', [customer.id]);
+export async function deleteCustomer(tenantId, id) {
+  const customer = await getCustomer(tenantId, id);
+  const hasOrders = await get('SELECT id FROM orders WHERE tenant_id = ? AND customer_id = ? LIMIT 1', [tenantId, customer.id]);
+  const hasTickets = await get('SELECT id FROM tickets WHERE tenant_id = ? AND customer_id = ? LIMIT 1', [tenantId, customer.id]);
   if (hasOrders || hasTickets) {
     throw conflict('Customer cannot be deleted because orders or tickets exist.');
   }
-  await run('DELETE FROM customers WHERE id = ?', [customer.id]);
+  await run('DELETE FROM customers WHERE tenant_id = ? AND id = ?', [tenantId, customer.id]);
 }
 
-export async function getCustomer360(id) {
-  const customer = await getCustomer(id);
+export async function getCustomer360(tenantId, id) {
+  const customer = await getCustomer(tenantId, id);
   const orders = await all(
     `SELECT id, customer_id AS "customerId", order_number AS "orderNumber", amount, status, order_date AS "orderDate"
      FROM orders
-     WHERE customer_id = ?
+     WHERE tenant_id = ? AND customer_id = ?
      ORDER BY order_date DESC`,
-    [customer.id],
+    [tenantId, customer.id],
   );
-  const tickets = await all(ticketSelect('WHERE t.customer_id = ? ORDER BY t.created_at DESC'), [customer.id]);
+  const tickets = await all(ticketSelect('WHERE t.tenant_id = ? AND t.customer_id = ? ORDER BY t.created_at DESC'), [tenantId, customer.id]);
   const totalSpend = orders.reduce((sum, order) => sum + Number(order.amount), 0);
   const openTickets = tickets.filter((ticket) => ['OPEN', 'IN_PROGRESS'].includes(ticket.status)).length;
   return {
@@ -96,13 +98,13 @@ export async function getCustomer360(id) {
   };
 }
 
-export async function syncContact(id) {
-  const customer = await getCustomer(id);
+export async function syncContact(tenantId, id) {
+  const customer = await getCustomer(tenantId, id);
   if (customer.salesforceContactId) {
     return { success: true, id: customer.salesforceContactId, message: 'Customer already has a Salesforce Contact ID.' };
   }
-  const salesforceContactId = await syncSalesforceContact(customer);
-  await run('UPDATE customers SET salesforce_contact_id = ?, updated_at = ? WHERE id = ?', [salesforceContactId, now(), customer.id]);
+  const salesforceContactId = await syncSalesforceContact(tenantId, customer);
+  await run('UPDATE customers SET salesforce_contact_id = ?, updated_at = ? WHERE tenant_id = ? AND id = ?', [salesforceContactId, now(), tenantId, customer.id]);
   return { success: true, id: salesforceContactId, message: 'Customer synced to Salesforce.' };
 }
 
@@ -125,6 +127,7 @@ function clean(value) {
 export function customerSelect(extra = '') {
   return `SELECT
       id,
+      tenant_id AS "tenantId",
       full_name AS "fullName",
       email,
       phone,
@@ -139,6 +142,7 @@ export function customerSelect(extra = '') {
 export function ticketSelect(extra = '') {
   return `SELECT
       t.id,
+      t.tenant_id AS "tenantId",
       t.customer_id AS "customerId",
       c.full_name AS "customerName",
       t.subject,

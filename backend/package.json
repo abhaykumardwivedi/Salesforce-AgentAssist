@@ -4,6 +4,9 @@
   "description": "Node and Express REST API for Salesforce AgentAssist",
   "type": "module",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node --no-warnings --watch src/server.js",
     "start": "node --no-warnings src/server.js",
@@ -12,12 +15,16 @@
     "test": "node --no-warnings --import ./setup-env.js --test --test-concurrency=1"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
+    "express-rate-limit": "^8.5.2",
     "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "zod": "^4.4.3"
   }
 }

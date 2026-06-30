@@ -4,12 +4,16 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import aiRoutes from './routes/ai.routes.js';
+import authRoutes from './routes/auth.routes.js';
 import customerRoutes from './routes/customer.routes.js';
 import logRoutes from './routes/log.routes.js';
-import salesforceRoutes from './routes/salesforce.routes.js';
+import salesforceRoutes, { salesforceOauthCallback } from './routes/salesforce.routes.js';
+import settingsRoutes from './routes/settings.routes.js';
 import ticketRoutes from './routes/ticket.routes.js';
 import { healthCheck } from './database/db.js';
 import { asyncHandler } from './middleware/asyncHandler.js';
+import { requireAuth } from './middleware/auth.js';
+import { apiLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -38,11 +42,18 @@ app.get('/health', asyncHandler(async (req, res) => {
   res.json({ status: 'ok', service: 'salesforce-agentassist-api', database });
 }));
 
-app.use('/api/v1/customers', customerRoutes);
-app.use('/api/v1/tickets', ticketRoutes);
-app.use('/api/v1/ai', aiRoutes);
-app.use('/api/v1/salesforce', salesforceRoutes);
-app.use('/api/v1/logs', logRoutes);
+// Public routes.
+app.use('/api/v1', apiLimiter);
+app.use('/api/v1/auth', authRoutes);
+app.get('/api/v1/salesforce/oauth/callback', salesforceOauthCallback);
+
+// Protected routes.
+app.use('/api/v1/customers', requireAuth, customerRoutes);
+app.use('/api/v1/tickets', requireAuth, ticketRoutes);
+app.use('/api/v1/ai', requireAuth, aiRoutes);
+app.use('/api/v1/salesforce', requireAuth, salesforceRoutes);
+app.use('/api/v1/logs', requireAuth, logRoutes);
+app.use('/api/v1/settings', requireAuth, settingsRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -1,161 +1,173 @@
-import { badGateway } from '../utils/httpError.js';
+import { badGateway, badRequest } from '../utils/httpError.js';
 import { logApiCall } from './logService.js';
+import { getIntegrationConfig, mergeIntegration, setIntegrationStatus } from './integrationService.js';
 
-const salesforceConfig = () => ({
-  enabled: String(process.env.SALESFORCE_ENABLED ?? 'true').toLowerCase() === 'true',
-  mode: String(process.env.SALESFORCE_MODE || 'MOCK').toUpperCase(),
-  apiVersion: process.env.SALESFORCE_API_VERSION || 'v60.0',
-  configured: hasRealConfig(),
-});
+const DEFAULT_API_VERSION = 'v60.0';
+const DEFAULT_LOGIN_URL = 'https://login.salesforce.com';
+const OAUTH_SCOPE = 'api refresh_token';
 
-export function getSalesforceStatus() {
-  const config = salesforceConfig();
+function platformApp() {
   return {
-    enabled: config.enabled,
-    mode: config.mode === 'REAL' ? 'REAL' : 'MOCK',
-    configured: config.mode === 'REAL' ? config.configured : true,
-    apiVersion: config.apiVersion,
+    clientId: process.env.SALESFORCE_CLIENT_ID || '',
+    clientSecret: process.env.SALESFORCE_CLIENT_SECRET || '',
+    redirectUri: process.env.SALESFORCE_REDIRECT_URI || '',
+    loginUrl: (process.env.SALESFORCE_LOGIN_URL || DEFAULT_LOGIN_URL).replace(/\/$/, ''),
+    apiVersion: process.env.SALESFORCE_API_VERSION || DEFAULT_API_VERSION,
   };
 }
 
-export async function syncContact(customer) {
-  const started = Date.now();
-  const status = getSalesforceStatus();
-  if (!status.enabled) {
-    logApiCall({
-      provider: 'Salesforce-Mock',
-      endpoint: '/sobjects/Contact',
-      method: 'POST',
-      statusCode: 503,
-      responseTimeMs: Date.now() - started,
-      success: false,
-      errorMessage: 'Salesforce integration is disabled.',
-    });
-    throw badGateway('Salesforce integration is disabled.');
-  }
-
-  if (status.mode === 'REAL') {
-    return syncRealContact(customer, started);
-  }
-
-  const id = `003-mock-${Date.now()}`;
-  logApiCall({
-    provider: 'Salesforce-Mock',
-    endpoint: '/sobjects/Contact',
-    method: 'POST',
-    statusCode: 201,
-    responseTimeMs: Date.now() - started,
-    success: true,
-  });
-  return id;
+function appConfigured() {
+  const app = platformApp();
+  return Boolean(app.clientId && app.clientSecret && app.redirectUri);
 }
 
-export async function createCase(ticket, customer) {
-  const started = Date.now();
-  const status = getSalesforceStatus();
-  if (!status.enabled) {
-    logApiCall({
-      provider: 'Salesforce-Mock',
-      endpoint: '/sobjects/Case',
-      method: 'POST',
-      statusCode: 503,
-      responseTimeMs: Date.now() - started,
-      success: false,
-      errorMessage: 'Salesforce integration is disabled.',
-    });
-    throw badGateway('Salesforce integration is disabled.');
-  }
-
-  if (status.mode === 'REAL') {
-    return createRealCase(ticket, customer, started);
-  }
-
-  const id = `500-mock-${Date.now()}`;
-  logApiCall({
-    provider: 'Salesforce-Mock',
-    endpoint: '/sobjects/Case',
-    method: 'POST',
-    statusCode: 201,
-    responseTimeMs: Date.now() - started,
-    success: true,
-  });
-  return id;
+export async function getSalesforceStatus(tenantId) {
+  const config = (await getIntegrationConfig(tenantId, 'SALESFORCE')) || {};
+  const connected = Boolean(config.refreshToken || config.accessToken);
+  return {
+    enabled: true,
+    mode: connected ? 'REAL' : 'LOCAL',
+    connected,
+    appConfigured: appConfigured(),
+    instanceUrl: config.instanceUrl || null,
+    apiVersion: config.apiVersion || platformApp().apiVersion,
+  };
 }
 
-async function syncRealContact(customer, started) {
-  try {
-    const session = await authenticate();
-    const endpoint = `${session.instanceUrl}/services/data/${process.env.SALESFORCE_API_VERSION || 'v60.0'}/sobjects/Contact`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(contactPayload(customer)),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(JSON.stringify(data));
-    logApiCall({ provider: 'Salesforce-Real', endpoint, method: 'POST', statusCode: response.status, responseTimeMs: Date.now() - started, success: true });
-    return data.id;
-  } catch (error) {
-    logApiCall({ provider: 'Salesforce-Real', endpoint: '/sobjects/Contact', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - started, success: false, errorMessage: error.message });
-    throw badGateway('Salesforce contact sync failed.');
-  }
-}
-
-async function createRealCase(ticket, customer, started) {
-  try {
-    const session = await authenticate();
-    const endpoint = `${session.instanceUrl}/services/data/${process.env.SALESFORCE_API_VERSION || 'v60.0'}/sobjects/Case`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(casePayload(ticket, customer)),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(JSON.stringify(data));
-    logApiCall({ provider: 'Salesforce-Real', endpoint, method: 'POST', statusCode: response.status, responseTimeMs: Date.now() - started, success: true });
-    return data.id;
-  } catch (error) {
-    logApiCall({ provider: 'Salesforce-Real', endpoint: '/sobjects/Case', method: 'POST', statusCode: 502, responseTimeMs: Date.now() - started, success: false, errorMessage: error.message });
-    throw badGateway('Salesforce case creation failed.');
-  }
-}
-
-async function authenticate() {
-  if (!hasRealConfig()) throw new Error('Salesforce real mode is not fully configured.');
+export function buildAuthorizeUrl(state) {
+  const app = platformApp();
+  if (!appConfigured()) throw badRequest('Salesforce connected app is not configured on the server.');
   const params = new URLSearchParams({
-    grant_type: 'password',
-    client_id: process.env.SALESFORCE_CLIENT_ID,
-    client_secret: process.env.SALESFORCE_CLIENT_SECRET,
-    username: process.env.SALESFORCE_USERNAME,
-    password: `${process.env.SALESFORCE_PASSWORD}${process.env.SALESFORCE_SECURITY_TOKEN}`,
+    response_type: 'code',
+    client_id: app.clientId,
+    redirect_uri: app.redirectUri,
+    scope: OAUTH_SCOPE,
+    state,
   });
-  const loginUrl = process.env.SALESFORCE_LOGIN_URL || 'https://login.salesforce.com';
-  const response = await fetch(`${loginUrl.replace(/\/$/, '')}/services/oauth2/token`, {
+  return `${app.loginUrl}/services/oauth2/authorize?${params.toString()}`;
+}
+
+export async function completeOAuth(tenantId, code) {
+  const app = platformApp();
+  if (!appConfigured()) throw badRequest('Salesforce connected app is not configured on the server.');
+  if (!code) throw badRequest('Authorization code is required.');
+
+  const params = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    client_id: app.clientId,
+    client_secret: app.clientSecret,
+    redirect_uri: app.redirectUri,
+  });
+
+  const response = await fetch(`${app.loginUrl}/services/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(JSON.stringify(data));
-  return { accessToken: data.access_token, instanceUrl: data.instance_url };
+  if (!response.ok) {
+    await setIntegrationStatus(tenantId, 'SALESFORCE', 'ERROR');
+    throw badGateway(`Salesforce authorization failed: ${data.error_description || data.error || 'unknown error'}`);
+  }
+
+  await mergeIntegration(tenantId, 'SALESFORCE', {
+    instanceUrl: data.instance_url,
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    apiVersion: app.apiVersion,
+  }, 'CONNECTED');
+
+  return { connected: true, instanceUrl: data.instance_url };
 }
 
-function hasRealConfig() {
-  return [
-    'SALESFORCE_LOGIN_URL',
-    'SALESFORCE_CLIENT_ID',
-    'SALESFORCE_CLIENT_SECRET',
-    'SALESFORCE_USERNAME',
-    'SALESFORCE_PASSWORD',
-    'SALESFORCE_SECURITY_TOKEN',
-    'SALESFORCE_API_VERSION',
-  ].every((key) => Boolean(process.env[key]));
+export async function disconnect(tenantId) {
+  await setIntegrationStatus(tenantId, 'SALESFORCE', 'DISCONNECTED');
+}
+
+export async function syncContact(tenantId, customer) {
+  const started = Date.now();
+  const config = (await getIntegrationConfig(tenantId, 'SALESFORCE')) || {};
+  if (!isConnected(config)) {
+    const id = `003-local-${Date.now()}`;
+    await logApiCall({ tenantId, provider: 'Salesforce-Local', endpoint: '/sobjects/Contact', method: 'POST', statusCode: 201, responseTimeMs: Date.now() - started, success: true });
+    return id;
+  }
+  return sobjectCreate(tenantId, config, 'Contact', contactPayload(customer), started);
+}
+
+export async function createCase(tenantId, ticket, customer) {
+  const started = Date.now();
+  const config = (await getIntegrationConfig(tenantId, 'SALESFORCE')) || {};
+  if (!isConnected(config)) {
+    const id = `500-local-${Date.now()}`;
+    await logApiCall({ tenantId, provider: 'Salesforce-Local', endpoint: '/sobjects/Case', method: 'POST', statusCode: 201, responseTimeMs: Date.now() - started, success: true });
+    return id;
+  }
+  return sobjectCreate(tenantId, config, 'Case', casePayload(ticket, customer), started);
+}
+
+async function sobjectCreate(tenantId, config, sobject, payload, started) {
+  const endpoint = `/sobjects/${sobject}`;
+  try {
+    const response = await authorizedRequest(tenantId, config, `/services/data/${config.apiVersion || DEFAULT_API_VERSION}/sobjects/${sobject}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(JSON.stringify(data));
+    await logApiCall({ tenantId, provider: 'Salesforce-Real', endpoint, method: 'POST', statusCode: response.status, responseTimeMs: Date.now() - started, success: true });
+    return data.id;
+  } catch (error) {
+    await logApiCall({ tenantId, provider: 'Salesforce-Real', endpoint, method: 'POST', statusCode: 502, responseTimeMs: Date.now() - started, success: false, errorMessage: error.message });
+    throw badGateway(`Salesforce ${sobject} request failed.`);
+  }
+}
+
+async function authorizedRequest(tenantId, config, urlPath, options, retried = false) {
+  const url = `${config.instanceUrl}${urlPath}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${config.accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+
+  if (response.status === 401 && !retried && config.refreshToken) {
+    const refreshed = await refreshAccessToken(tenantId, config);
+    return authorizedRequest(tenantId, refreshed, urlPath, options, true);
+  }
+  return response;
+}
+
+async function refreshAccessToken(tenantId, config) {
+  const app = platformApp();
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: config.refreshToken,
+    client_id: app.clientId,
+    client_secret: app.clientSecret,
+  });
+  const response = await fetch(`${app.loginUrl}/services/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params,
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    await setIntegrationStatus(tenantId, 'SALESFORCE', 'ERROR');
+    throw new Error(`Salesforce token refresh failed: ${data.error_description || data.error || 'unknown error'}`);
+  }
+  return mergeIntegration(tenantId, 'SALESFORCE', {
+    accessToken: data.access_token,
+    ...(data.instance_url ? { instanceUrl: data.instance_url } : {}),
+  }, 'CONNECTED');
+}
+
+function isConnected(config) {
+  return Boolean(config.accessToken && config.instanceUrl);
 }
 
 function contactPayload(customer) {

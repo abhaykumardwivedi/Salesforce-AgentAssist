@@ -1,9 +1,74 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
+CREATE TABLE IF NOT EXISTS tenants (
+  id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  slug VARCHAR(80) NOT NULL UNIQUE,
+  status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_tenant_status CHECK (status IN ('ACTIVE', 'SUSPENDED'))
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  full_name VARCHAR(150) NOT NULL,
+  email VARCHAR(150) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(20) NOT NULL DEFAULT 'AGENT',
+  status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+  last_login_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_user_role CHECK (role IN ('OWNER', 'ADMIN', 'AGENT')),
+  CONSTRAINT chk_user_status CHECK (status IN ('ACTIVE', 'DISABLED'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant_email ON users(tenant_id, lower(email));
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(255) NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS tenant_integrations (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  provider VARCHAR(40) NOT NULL,
+  config_encrypted TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'DISCONNECTED',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_integration_provider CHECK (provider IN ('OPENAI', 'SALESFORCE')),
+  CONSTRAINT chk_integration_status CHECK (status IN ('CONNECTED', 'DISCONNECTED', 'ERROR'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_integrations_provider ON tenant_integrations(tenant_id, provider);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  action VARCHAR(80) NOT NULL,
+  entity VARCHAR(80),
+  entity_id VARCHAR(80),
+  metadata TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant ON audit_logs(tenant_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS customers (
   id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   full_name VARCHAR(150) NOT NULL,
-  email VARCHAR(150) NOT NULL UNIQUE,
+  email VARCHAR(150) NOT NULL,
   phone VARCHAR(30),
   company_name VARCHAR(150),
   segment VARCHAR(30) NOT NULL DEFAULT 'NORMAL',
@@ -13,17 +78,23 @@ CREATE TABLE IF NOT EXISTS customers (
   CONSTRAINT chk_customer_segment CHECK (segment IN ('NORMAL', 'PREMIUM', 'HIGH_VALUE', 'AT_RISK'))
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_tenant_email ON customers(tenant_id, lower(email));
+
 CREATE TABLE IF NOT EXISTS orders (
   id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
-  order_number VARCHAR(100) NOT NULL UNIQUE,
+  order_number VARCHAR(100) NOT NULL,
   amount NUMERIC(12, 2) NOT NULL,
   status VARCHAR(40) NOT NULL,
   order_date DATE NOT NULL
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_tenant_number ON orders(tenant_id, order_number);
+
 CREATE TABLE IF NOT EXISTS tickets (
   id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   subject VARCHAR(200) NOT NULL,
   description TEXT NOT NULL,
@@ -43,6 +114,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 
 CREATE TABLE IF NOT EXISTS api_logs (
   id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT REFERENCES tenants(id) ON DELETE CASCADE,
   provider VARCHAR(100) NOT NULL,
   endpoint VARCHAR(255) NOT NULL,
   method VARCHAR(10) NOT NULL,
@@ -55,6 +127,7 @@ CREATE TABLE IF NOT EXISTS api_logs (
 
 CREATE TABLE IF NOT EXISTS ai_insights (
   id BIGSERIAL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   ticket_id BIGINT REFERENCES tickets(id) ON DELETE SET NULL,
   summary TEXT NOT NULL,
@@ -63,9 +136,10 @@ CREATE TABLE IF NOT EXISTS ai_insights (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets(customer_id);
-CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
-CREATE INDEX IF NOT EXISTS idx_api_logs_created_at ON api_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_tenant_status ON tickets(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_api_logs_tenant_created ON api_logs(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_insights_customer_id ON ai_insights(customer_id);
 CREATE INDEX IF NOT EXISTS idx_ai_insights_embedding ON ai_insights USING ivfflat (embedding vector_cosine_ops);
