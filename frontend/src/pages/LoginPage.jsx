@@ -49,6 +49,7 @@ export function LoginPage() {
           {error && <p className="form-error">{error}</p>}
           <button className="btn primary" type="submit" disabled={submitting}>{submitting ? 'Signing in...' : 'Sign in'}</button>
         </form>
+        <p className="small muted"><Link className="link" to="/forgot-password">Forgot your password?</Link></p>
         <p className="small muted">No workspace yet? <Link className="link" to="/signup">Create one</Link></p>
       </div>
     </div>

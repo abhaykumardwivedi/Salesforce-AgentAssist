@@ -20,6 +20,19 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required.'),
 });
 
+export const passwordResetRequestSchema = z.object({
+  email: z.string().trim().email('A valid email is required.').max(150),
+});
+
+export const passwordResetSchema = z.object({
+  token: z.string().min(1, 'Reset token is required.'),
+  password: z.string().min(8, 'Password must be at least 8 characters.').max(200),
+});
+
+export const emailVerifySchema = z.object({
+  token: z.string().min(1, 'Verification token is required.'),
+});
+
 export const customerSchema = z.object({
   fullName: z.string().trim().min(1, 'Full name is required.').max(150),
   email: z.string().trim().email('A valid email is required.').max(150),

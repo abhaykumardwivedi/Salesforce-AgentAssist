@@ -63,6 +63,14 @@ export async function run(sql, params = []) {
   return sqlite.prepare(sql).run(...params);
 }
 
+export async function exec(sql) {
+  if (dbMode === 'postgres') {
+    await pool.query(sql);
+    return;
+  }
+  sqlite.exec(sql);
+}
+
 export async function healthCheck() {
   if (dbMode === 'postgres') {
     await pool.query('SELECT 1');

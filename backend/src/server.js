@@ -11,8 +11,10 @@ dotenv.config({ path: path.join(repoRoot, '.env') });
 dotenv.config({ path: path.join(backendRoot, '.env'), override: true });
 
 const { default: app } = await import('./app.js');
+const { runMigrations } = await import('./database/migrate.js');
 const { ensureSeedData } = await import('./database/bootstrap.js');
 
+await runMigrations();
 await ensureSeedData();
 
 const port = process.env.PORT || 8080;

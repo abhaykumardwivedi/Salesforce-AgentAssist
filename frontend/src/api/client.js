@@ -65,6 +65,10 @@ export const apiSignup = (payload) => api.post('/auth/signup', payload).then((re
 export const apiLogin = (payload) => api.post('/auth/login', payload).then((res) => res.data);
 export const apiLogout = (refreshToken) => api.post('/auth/logout', { refreshToken });
 export const apiMe = () => api.get('/auth/me').then((res) => res.data);
+export const apiRequestPasswordReset = (email) => api.post('/auth/request-password-reset', { email }).then((res) => res.data);
+export const apiResetPassword = (token, password) => api.post('/auth/reset-password', { token, password }).then((res) => res.data);
+export const apiVerifyEmail = (token) => api.post('/auth/verify-email', { token }).then((res) => res.data);
+export const apiResendVerification = () => api.post('/auth/resend-verification').then((res) => res.data);
 
 // Customers
 export const getCustomers = () => api.get('/customers').then((res) => res.data);

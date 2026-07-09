@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS tenants (
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'ACTIVE',
+  ai_monthly_limit INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (status IN ('ACTIVE', 'SUSPENDED'))
@@ -16,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'AGENT',
   status TEXT NOT NULL DEFAULT 'ACTIVE',
+  email_verified INTEGER NOT NULL DEFAULT 0,
+  email_verified_at TEXT,
   last_login_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -37,6 +40,31 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS user_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  purpose TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL,
+  CHECK (purpose IN ('PASSWORD_RESET', 'EMAIL_VERIFY')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id, purpose);
+
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL,
+  period_month TEXT NOT NULL,
+  calls INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_usage_period ON ai_usage(tenant_id, period_month);
 
 CREATE TABLE IF NOT EXISTS tenant_integrations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -19,9 +19,9 @@ const pool = new Pool({
 });
 
 try {
-  const schema = fs.readFileSync(path.join(repoRoot, 'docs', 'supabase-schema.sql'), 'utf8');
+  const { runMigrations } = await import('../src/database/migrate.js');
+  await runMigrations({ log: true });
   const seed = fs.readFileSync(path.join(repoRoot, 'docs', 'supabase-seed.sql'), 'utf8');
-  await pool.query(schema);
   await pool.query(seed);
   const { ensureSeedData } = await import('../src/database/bootstrap.js');
   await ensureSeedData();
