@@ -1,5 +1,6 @@
 import { RefreshCcw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { createSalesforceCase, getTickets, updateTicketStatus } from '../api/client.js';
 import { Badge } from '../components/Badge.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -60,7 +61,7 @@ export function TicketsPage() {
               {filtered.map((ticket) => (
                 <tr key={ticket.id}>
                   <td>
-                    <strong>{ticket.subject}</strong>
+                    <Link className="link" to={`/tickets/${ticket.id}`}><strong>{ticket.subject}</strong></Link>
                     <p className="muted small">{ticket.customerName} | {ticket.assignedTeam}</p>
                   </td>
                   <td>{ticket.category}</td>

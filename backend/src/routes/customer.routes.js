@@ -1,11 +1,19 @@
 import express from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { createCustomer, deleteCustomer, getCustomer, getCustomer360, listCustomers, syncContact, updateCustomer } from '../services/customerService.js';
+import { bulkImportCustomers } from '../services/dataService.js';
 import { recordAudit } from '../services/auditService.js';
-import { customerSchema } from '../validators/schemas.js';
+import { bulkImportSchema, customerSchema } from '../validators/schemas.js';
 
 const router = express.Router();
+
+router.post('/bulk', requireRole('OWNER', 'ADMIN'), validate(bulkImportSchema), asyncHandler(async (req, res) => {
+  const result = await bulkImportCustomers(req.auth.tenantId, req.body.rows);
+  await recordAudit({ tenantId: req.auth.tenantId, userId: req.auth.userId, action: 'CUSTOMER_BULK_IMPORT', entity: 'customer', metadata: { created: result.created, skipped: result.skipped } });
+  res.json(result);
+}));
 
 router.get('/', asyncHandler(async (req, res) => {
   res.json(await listCustomers(req.auth.tenantId));

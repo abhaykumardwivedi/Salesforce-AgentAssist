@@ -22,3 +22,12 @@ export const authLimiter = rateLimit({
   skipSuccessfulRequests: true,
   message: jsonMessage('Too many authentication attempts. Please try again later.'),
 });
+
+// Public, unauthenticated self-service widget — kept tight to limit abuse.
+export const widgetLimiter = rateLimit({
+  windowMs: Number(process.env.WIDGET_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000),
+  max: Number(process.env.WIDGET_RATE_LIMIT_MAX || 40),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: jsonMessage('Too many requests. Please try again shortly.'),
+});

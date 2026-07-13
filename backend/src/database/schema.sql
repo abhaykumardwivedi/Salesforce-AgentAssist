@@ -4,10 +4,23 @@ CREATE TABLE IF NOT EXISTS tenants (
   slug TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'ACTIVE',
   ai_monthly_limit INTEGER,
+  public_key TEXT UNIQUE,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (status IN ('ACTIVE', 'SUSPENDED'))
 );
+
+CREATE TABLE IF NOT EXISTS deflection_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL,
+  question TEXT NOT NULL,
+  deflected INTEGER NOT NULL DEFAULT 1,
+  ticket_id INTEGER,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_deflection_events_tenant ON deflection_events(tenant_id, created_at);
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,6 +117,7 @@ CREATE TABLE IF NOT EXISTS customers (
   company_name TEXT,
   segment TEXT NOT NULL DEFAULT 'NORMAL',
   salesforce_contact_id TEXT,
+  salesforce_account_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (segment IN ('NORMAL', 'PREMIUM', 'HIGH_VALUE', 'AT_RISK')),
@@ -136,7 +150,9 @@ CREATE TABLE IF NOT EXISTS tickets (
   priority TEXT NOT NULL,
   sentiment TEXT NOT NULL,
   assigned_team TEXT NOT NULL,
+  assigned_user_id INTEGER,
   status TEXT NOT NULL DEFAULT 'OPEN',
+  language TEXT NOT NULL DEFAULT 'English',
   salesforce_case_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -145,8 +161,46 @@ CREATE TABLE IF NOT EXISTS tickets (
   CHECK (sentiment IN ('POSITIVE', 'NEUTRAL', 'NEGATIVE')),
   CHECK (status IN ('OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED')),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
-  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS ticket_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL,
+  ticket_id INTEGER NOT NULL,
+  author_type TEXT NOT NULL,
+  author_user_id INTEGER,
+  body TEXT NOT NULL,
+  is_internal INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  CHECK (author_type IN ('CUSTOMER', 'AGENT', 'SYSTEM')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+  FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket ON ticket_messages(tenant_id, ticket_id, created_at);
+
+CREATE TABLE IF NOT EXISTS automation_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  trigger_event TEXT NOT NULL,
+  condition_field TEXT,
+  condition_op TEXT,
+  condition_value TEXT,
+  action_type TEXT NOT NULL,
+  action_value TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (trigger_event IN ('TICKET_CREATED', 'CUSTOMER_MESSAGE')),
+  CHECK (action_type IN ('SET_PRIORITY', 'SET_STATUS', 'ADD_NOTE', 'ASSIGN_USER')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant ON automation_rules(tenant_id, trigger_event, is_active);
 
 CREATE TABLE IF NOT EXISTS api_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,6 +227,21 @@ CREATE TABLE IF NOT EXISTS ai_insights (
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
   FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS kb_articles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  category TEXT,
+  status TEXT NOT NULL DEFAULT 'PUBLISHED',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (status IN ('PUBLISHED', 'DRAFT')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_articles_tenant ON kb_articles(tenant_id, status);
 
 CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);

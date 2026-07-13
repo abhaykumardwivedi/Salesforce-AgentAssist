@@ -1,7 +1,7 @@
 import { CloudLightning, CreditCard, PackageCheck, TicketCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getCustomer360, syncContact } from '../api/client.js';
+import { getCustomer360, syncAccount, syncContact } from '../api/client.js';
 import { Badge } from '../components/Badge.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { StatCard } from '../components/StatCard.jsx';
@@ -34,6 +34,16 @@ export function Customer360Page() {
     }
   }
 
+  async function syncAccountToSf() {
+    try {
+      const response = await syncAccount(data.customer.id);
+      setMessage(response.message);
+      await load();
+    } catch {
+      setMessage('Salesforce account sync failed.');
+    }
+  }
+
   if (loading) return <EmptyState title="Loading Customer 360..." />;
   if (!data) return <EmptyState title="Customer not found" />;
 
@@ -45,7 +55,10 @@ export function Customer360Page() {
           <h1>{data.customer.fullName}</h1>
           <p>{data.customer.email}</p>
         </header>
-        <button className="button primary" onClick={sync} type="button"><CloudLightning size={16} />Sync Contact</button>
+        <div className="toolbar" style={{ gap: 8 }}>
+          <button className="button primary" onClick={sync} type="button"><CloudLightning size={16} />Sync Contact</button>
+          <button className="button secondary" onClick={syncAccountToSf} type="button"><CloudLightning size={16} />Sync Account</button>
+        </div>
       </div>
 
       {message && <div className="alert">{message}</div>}
@@ -62,11 +75,16 @@ export function Customer360Page() {
           <div>
             <h2>{data.customer.companyName || 'Customer Profile'}</h2>
             <p className="muted">{data.customer.phone || 'No phone'} | {data.customer.email}</p>
+          <p className="muted small">
+            SF Contact: {data.customer.salesforceContactId || '—'} · SF Account: {data.customer.salesforceAccountId || '—'}
+          </p>
           </div>
           <Badge value={data.customer.segment} />
         </div>
         <p>{data.aiCustomerSummary}</p>
       </section>
+
+      {data.risk && <RiskPanel risk={data.risk} />}
 
       <section>
         <div className="panel-title"><h2>Orders</h2></div>
@@ -101,6 +119,37 @@ export function Customer360Page() {
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+const riskTone = { HIGH: 'tone-red', MEDIUM: 'tone-amber', LOW: 'tone-green' };
+const meterColor = { HIGH: 'var(--red)', MEDIUM: 'var(--orange)', LOW: 'var(--green)' };
+
+function RiskPanel({ risk }) {
+  return (
+    <section className="panel">
+      <div className="toolbar">
+        <div>
+          <h2>Predicted risk</h2>
+          <p className="muted small">Rules-based scoring from tickets, sentiment, and orders.</p>
+        </div>
+        <span className={`badge ${riskTone[risk.level]}`}>{risk.level} risk</span>
+      </div>
+      <Meter label="Churn risk" value={risk.churnRisk} level={risk.level} />
+      <Meter label="Escalation risk" value={risk.escalationRisk} level={risk.escalationRisk >= 60 ? 'HIGH' : risk.escalationRisk >= 30 ? 'MEDIUM' : 'LOW'} />
+      <ul className="risk-signals">
+        {risk.signals.map((signal) => <li key={signal}>{signal}</li>)}
+      </ul>
+    </section>
+  );
+}
+
+function Meter({ label, value, level }) {
+  return (
+    <div className="meter-row">
+      <div className="meter-label"><span>{label}</span><strong>{value}/100</strong></div>
+      <div className="meter"><span style={{ width: `${value}%`, background: meterColor[level] }} /></div>
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { all, enums, get, now, run } from '../database/db.js';
 import { badRequest, notFound } from '../utils/httpError.js';
 import { classifyTicket } from './aiService.js';
 import { ticketSelect } from './customerService.js';
+import { indexTicket } from './retrievalService.js';
+import { runRules } from './automationService.js';
 import { createCase as createSalesforceCase } from './salesforceService.js';
 
 export async function listTickets(tenantId) {
@@ -30,8 +32,8 @@ export async function createTicket(tenantId, payload) {
   const createdAt = now();
   const insert = await run(
     `INSERT INTO tickets
-     (tenant_id, customer_id, subject, description, category, priority, sentiment, assigned_team, status, salesforce_case_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', NULL, ?, ?)`,
+     (tenant_id, customer_id, subject, description, category, priority, sentiment, assigned_team, status, language, salesforce_case_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, NULL, ?, ?)`,
     [
       tenantId,
       customer.id,
@@ -41,6 +43,7 @@ export async function createTicket(tenantId, payload) {
       classification.priority,
       classification.sentiment,
       classification.assignedTeam,
+      classification.language || 'English',
       createdAt,
       createdAt,
     ],
@@ -54,6 +57,15 @@ export async function createTicket(tenantId, payload) {
   } catch (error) {
     // Keep the local ticket even if Salesforce is disabled or unavailable.
   }
+
+  // Index for semantic "similar ticket" retrieval. Best-effort: never block or
+  // fail ticket creation on embedding issues.
+  await indexTicket(tenantId, ticket).catch(() => {});
+
+  // Run automation rules; if any fired they may have changed the ticket, so
+  // re-fetch to return the current state.
+  const fired = await runRules(tenantId, 'TICKET_CREATED', ticket);
+  if (fired.length) ticket = await getTicket(tenantId, ticket.id);
 
   return ticket;
 }

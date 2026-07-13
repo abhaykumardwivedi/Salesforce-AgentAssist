@@ -4,8 +4,10 @@ import { requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { disconnectIntegration, listIntegrations, saveIntegration } from '../services/integrationService.js';
 import { createUser, listUsers, updateUser } from '../services/userService.js';
+import { getUsage, setMonthlyLimit } from '../services/usageService.js';
+import { getWidgetInfo } from '../services/widgetService.js';
 import { listAudit, recordAudit } from '../services/auditService.js';
-import { openAiIntegrationSchema, userCreateSchema, userUpdateSchema } from '../validators/schemas.js';
+import { monthlyLimitSchema, openAiIntegrationSchema, userCreateSchema, userUpdateSchema } from '../validators/schemas.js';
 
 const router = express.Router();
 
@@ -44,6 +46,20 @@ router.put('/users/:id', requireRole('OWNER', 'ADMIN'), validate(userUpdateSchem
   const user = await updateUser(req.auth.tenantId, req.params.id, req.body);
   await recordAudit({ tenantId: req.auth.tenantId, userId: req.auth.userId, action: 'USER_UPDATE', entity: 'user', entityId: user.id });
   res.json(user);
+}));
+
+router.get('/usage', asyncHandler(async (req, res) => {
+  res.json(await getUsage(req.auth.tenantId));
+}));
+
+router.put('/usage/limit', requireRole('OWNER', 'ADMIN'), validate(monthlyLimitSchema), asyncHandler(async (req, res) => {
+  const usage = await setMonthlyLimit(req.auth.tenantId, req.body.limit);
+  await recordAudit({ tenantId: req.auth.tenantId, userId: req.auth.userId, action: 'AI_LIMIT_UPDATE', entity: 'tenant', metadata: { limit: req.body.limit } });
+  res.json(usage);
+}));
+
+router.get('/widget', requireRole('OWNER', 'ADMIN'), asyncHandler(async (req, res) => {
+  res.json(await getWidgetInfo(req.auth.tenantId));
 }));
 
 router.get('/audit', requireRole('OWNER', 'ADMIN'), asyncHandler(async (req, res) => {

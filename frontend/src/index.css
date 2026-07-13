@@ -549,3 +549,75 @@ textarea {
   display: grid;
   gap: 2px;
 }
+
+/* --- AI features: retrieval, copilot, analytics --- */
+.stack-lg { display: grid; gap: 18px; }
+.two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+.source-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; margin: 3px 6px 0 0; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface-soft);
+  font-size: 12px; color: var(--muted);
+}
+
+.similar-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.similar-item:last-child { border-bottom: none; }
+.similar-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.score-pill { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+.reply-box { width: 100%; min-height: 190px; resize: vertical; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); line-height: 1.5; }
+
+.meter { height: 8px; border-radius: 999px; background: var(--surface-soft); overflow: hidden; border: 1px solid var(--line); }
+.meter > span { display: block; height: 100%; border-radius: 999px; }
+.meter-row { display: grid; gap: 6px; margin-bottom: 12px; }
+.meter-label { display: flex; justify-content: space-between; font-size: 13px; }
+.risk-signals { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.risk-signals li { margin: 2px 0; }
+
+.bars { display: grid; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: 120px 1fr 44px; gap: 10px; align-items: center; font-size: 13px; }
+.bar-track { height: 10px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--blue); border-radius: 999px; }
+.bar-value { text-align: right; color: var(--muted); }
+
+.spark { display: flex; align-items: flex-end; gap: 6px; height: 90px; }
+.spark-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.spark-bar { width: 100%; background: var(--teal); border-radius: 4px 4px 0 0; min-height: 3px; }
+.spark-label { font-size: 11px; color: var(--muted); }
+
+.chat-shell { display: flex; flex-direction: column; height: calc(100vh - 150px); min-height: 420px; }
+.chat-log { flex: 1; overflow-y: auto; display: grid; gap: 12px; padding: 6px 2px; align-content: start; }
+.chat-msg { max-width: 78%; padding: 10px 14px; border-radius: 14px; line-height: 1.5; white-space: pre-wrap; }
+.chat-msg.user { justify-self: end; background: var(--blue); color: #fff; border-bottom-right-radius: 4px; }
+.chat-msg.assistant { justify-self: start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.chat-form { display: flex; gap: 10px; margin-top: 12px; }
+.chat-form input { flex: 1; padding: 11px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.chat-empty { color: var(--muted); text-align: center; margin: auto; max-width: 380px; }
+
+/* --- Conversation threads --- */
+.thread { display: grid; gap: 12px; margin: 6px 0 14px; }
+.msg { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); max-width: 82%; }
+.msg .msg-meta { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.msg .msg-body { white-space: pre-wrap; line-height: 1.5; }
+.msg.customer { justify-self: start; background: var(--surface-soft); border-bottom-left-radius: 4px; }
+.msg.agent { justify-self: end; background: #eef4ff; border-color: #d5e3ff; border-bottom-right-radius: 4px; }
+.msg.internal { justify-self: end; background: #fff8e6; border-color: #f2e2b3; border-bottom-right-radius: 4px; }
+.msg.system { justify-self: center; background: transparent; border-style: dashed; color: var(--muted); font-size: 13px; }
+.composer { display: grid; gap: 8px; }
+.composer textarea { width: 100%; min-height: 96px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); line-height: 1.5; }
+.composer-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.assignee-bar { display: flex; align-items: center; gap: 8px; }
+.internal-note-badge { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--orange); }
+
+/* --- Copilot action cards --- */
+.action-list { display: grid; gap: 8px; margin-top: 10px; }
+.action-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
+.action-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; color: var(--ink); }
+.action-body { margin: 6px 0 8px; padding: 8px 10px; background: var(--surface-soft); border-radius: 8px; font-size: 13px; white-space: pre-wrap; }
+.action-buttons { display: flex; gap: 8px; margin-top: 8px; }
+.action-status { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 13px; }
+.action-status.ok { color: var(--green); }
+.action-status.err { color: var(--red); }

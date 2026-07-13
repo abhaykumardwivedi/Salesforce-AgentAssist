@@ -1,6 +1,9 @@
-import { badGateway, badRequest } from '../utils/httpError.js';
+import crypto from 'node:crypto';
+import { get, now, run } from '../database/db.js';
+import { badGateway, badRequest, unauthorized } from '../utils/httpError.js';
 import { logApiCall } from './logService.js';
-import { getIntegrationConfig, mergeIntegration, setIntegrationStatus } from './integrationService.js';
+import { addMessage } from './conversationService.js';
+import { disconnectIntegration, getIntegrationConfig, getIntegrationStatus, mergeIntegration, setIntegrationStatus } from './integrationService.js';
 
 const DEFAULT_API_VERSION = 'v60.0';
 const DEFAULT_LOGIN_URL = 'https://login.salesforce.com';
@@ -82,7 +85,11 @@ export async function completeOAuth(tenantId, code) {
 }
 
 export async function disconnect(tenantId) {
-  await setIntegrationStatus(tenantId, 'SALESFORCE', 'DISCONNECTED');
+  // Clear the stored OAuth tokens, not just the status flag. Connection state is
+  // derived from the config everywhere (status, syncContact, createCase), so
+  // leaving the credentials behind would keep the org "connected" after a
+  // disconnect and continue issuing live API calls.
+  await disconnectIntegration(tenantId, 'SALESFORCE');
 }
 
 export async function syncContact(tenantId, customer) {
@@ -94,6 +101,64 @@ export async function syncContact(tenantId, customer) {
     return id;
   }
   return sobjectCreate(tenantId, config, 'Contact', contactPayload(customer), started);
+}
+
+export async function syncAccount(tenantId, customer) {
+  const started = Date.now();
+  const config = (await getIntegrationConfig(tenantId, 'SALESFORCE')) || {};
+  if (!isConnected(config)) {
+    const id = `001-local-${Date.now()}`;
+    await logApiCall({ tenantId, provider: 'Salesforce-Local', endpoint: '/sobjects/Account', method: 'POST', statusCode: 201, responseTimeMs: Date.now() - started, success: true });
+    return id;
+  }
+  return sobjectCreate(tenantId, config, 'Account', accountPayload(customer), started);
+}
+
+// ---------------------------------------------------------------------------
+// Inbound webhook: Salesforce -> AgentAssist (bi-directional status sync)
+// ---------------------------------------------------------------------------
+
+const CASE_STATUS_MAP = {
+  new: 'OPEN',
+  working: 'IN_PROGRESS',
+  'in progress': 'IN_PROGRESS',
+  escalated: 'IN_PROGRESS',
+  'on hold': 'IN_PROGRESS',
+  resolved: 'RESOLVED',
+  closed: 'CLOSED',
+};
+
+export async function rotateWebhookSecret(tenantId) {
+  const secret = crypto.randomBytes(24).toString('base64url');
+  const status = await getIntegrationStatus(tenantId, 'SALESFORCE');
+  await mergeIntegration(tenantId, 'SALESFORCE', { inboundSecret: secret }, status.status || 'DISCONNECTED');
+  return secret;
+}
+
+export async function getWebhookInfo(tenantId) {
+  const config = (await getIntegrationConfig(tenantId, 'SALESFORCE')) || {};
+  const base = (process.env.PUBLIC_API_BASE_URL || `http://localhost:${process.env.PORT || 8080}/api/v1`).replace(/\/$/, '');
+  return { url: `${base}/public/salesforce/webhook/${tenantId}`, configured: Boolean(config.inboundSecret) };
+}
+
+// Applies an inbound Salesforce Case status change to the matching local ticket.
+export async function handleInboundCaseUpdate(tenantId, secret, payload) {
+  const config = (await getIntegrationConfig(tenantId, 'SALESFORCE')) || {};
+  if (!config.inboundSecret || config.inboundSecret !== secret) throw unauthorized('Invalid webhook secret.');
+
+  const caseId = String(payload.caseId || '').trim();
+  if (!caseId) throw badRequest('caseId is required.');
+  const mapped = CASE_STATUS_MAP[String(payload.status || '').trim().toLowerCase()];
+  if (!mapped) throw badRequest('Unrecognized Salesforce case status.');
+
+  const ticket = await get('SELECT id, status FROM tickets WHERE tenant_id = ? AND salesforce_case_id = ?', [tenantId, caseId]);
+  if (!ticket) return { updated: false, reason: 'No ticket linked to that case.' };
+  if (ticket.status === mapped) return { updated: false, reason: 'Status already current.' };
+
+  await run('UPDATE tickets SET status = ?, updated_at = ? WHERE tenant_id = ? AND id = ?', [mapped, now(), tenantId, ticket.id]);
+  await addMessage(tenantId, ticket.id, { authorType: 'SYSTEM', authorUserId: null, body: `Salesforce case ${caseId} updated status to ${payload.status} — ticket set to ${mapped}.`, isInternal: true }).catch(() => {});
+  await logApiCall({ tenantId, provider: 'Salesforce-Inbound', endpoint: '/webhook/case', method: 'POST', statusCode: 200, responseTimeMs: 0, success: true });
+  return { updated: true, ticketId: ticket.id, status: mapped };
 }
 
 export async function createCase(tenantId, ticket, customer) {
@@ -180,6 +245,13 @@ function contactPayload(customer) {
     Email: customer.email,
     Phone: customer.phone,
     Description: customer.companyName ? `Company: ${customer.companyName}` : undefined,
+  };
+}
+
+function accountPayload(customer) {
+  return {
+    Name: customer.companyName || customer.fullName,
+    Description: `AgentAssist account for ${customer.fullName} (${customer.email}).`,
   };
 }
 

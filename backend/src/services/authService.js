@@ -35,7 +35,7 @@ export async function signup(payload) {
 export async function requestPasswordReset(email) {
   const normalized = normalizeEmail(email);
   const record = await get(
-    `SELECT id, email, status FROM users WHERE lower(email) = ? AND status = 'ACTIVE' ORDER BY id ASC LIMIT 1`,
+    `SELECT id, tenant_id AS "tenantId", email, status FROM users WHERE lower(email) = ? AND status = 'ACTIVE' ORDER BY id ASC LIMIT 1`,
     [normalized],
   );
   // Always report success so the endpoint cannot be used to probe which
@@ -44,7 +44,7 @@ export async function requestPasswordReset(email) {
 
   const token = await createUserToken(record.id, 'PASSWORD_RESET', PASSWORD_RESET_TTL_MIN);
   await sendPasswordResetEmail(record.email, token);
-  await recordAudit({ tenantId: null, userId: record.id, action: 'AUTH_PASSWORD_RESET_REQUEST', entity: 'user', entityId: record.id });
+  await recordAudit({ tenantId: record.tenantId, userId: record.id, action: 'AUTH_PASSWORD_RESET_REQUEST', entity: 'user', entityId: record.id });
   return { requested: true };
 }
 
