@@ -41,5 +41,13 @@ VALUES
   (1, 1, NULL, 'High-value customer with recent billing and refund concerns. Prioritize fast resolution and proactive follow-up.', 'Offer a callback from Billing Support and confirm refund status.', NOW()),
   (1, 3, NULL, 'At-risk customer with repeated delivery and payment friction. Monitor open tickets closely.', 'Escalate open issues and confirm next delivery update.', NOW());
 
+INSERT INTO kb_articles (tenant_id, title, content, category, status, created_at, updated_at)
+VALUES
+  (1, 'Refunding a duplicate charge', 'When a customer is charged twice for the same order, verify the duplicate transaction in the billing dashboard, then issue a refund for the extra charge. Refunds are processed to the original payment method and typically settle within 5-7 business days. Always share the refund reference number with the customer and confirm the expected settlement date.', 'BILLING', 'PUBLISHED', NOW(), NOW()),
+  (1, 'Resolving login errors after a password reset', 'If a customer cannot log in after resetting their password, first confirm the reset link was used within its expiry window. Ask them to clear cached credentials and retry. If the error persists, check that the account status is ACTIVE and that email verification is complete. Escalate to Technical Support when the account is active but authentication still fails.', 'TECHNICAL', 'PUBLISHED', NOW(), NOW()),
+  (1, 'Handling delayed deliveries and stale tracking', 'For shipments where tracking has not updated, contact the courier with the tracking number to confirm the current status. Provide the customer with a revised delivery estimate and, for delays beyond 7 days, offer a goodwill credit. Log the courier reference in the ticket for follow-up.', 'DELIVERY', 'PUBLISHED', NOW(), NOW()),
+  (1, 'Charged but the order failed', 'When an order fails but the card is charged, the amount is usually an authorization hold that is released automatically within 3-5 business days. Confirm whether the charge is a hold or a settled transaction. If settled, process a refund. Reassure the customer and set a clear expectation on the release timeline.', 'BILLING', 'PUBLISHED', NOW(), NOW()),
+  (1, 'Updating a customer account email', 'To change an account email, verify the customer''s identity, update the email on the profile, and trigger a re-verification message to the new address. The customer must confirm the new email before it becomes their sign-in identity. Remind them that pending reset links sent to the old address will no longer work.', 'ACCOUNT', 'PUBLISHED', NOW(), NOW());
+
 SELECT setval('tenants_id_seq', (SELECT COALESCE(MAX(id), 1) FROM tenants));
 SELECT setval('customers_id_seq', (SELECT COALESCE(MAX(id), 1) FROM customers));

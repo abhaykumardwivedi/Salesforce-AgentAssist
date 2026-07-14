@@ -16,3 +16,6 @@ Thumbs.db
 # Local design/spec documents (not part of the shipped app)
 *.docx
 *.pdf
+
+# Personal learning notes (not part of the shipped app)
+docs/learn/

@@ -1,7 +1,8 @@
 import { all, enums, get, now, run } from '../database/db.js';
 import { badRequest, conflict, notFound } from '../utils/httpError.js';
 import { getOrCreateCustomerSummary } from './aiService.js';
-import { syncContact as syncSalesforceContact } from './salesforceService.js';
+import { getCustomerRisk } from './analyticsService.js';
+import { syncAccount as syncSalesforceAccount, syncContact as syncSalesforceContact } from './salesforceService.js';
 
 export async function listCustomers(tenantId) {
   return all(customerSelect('WHERE tenant_id = ? ORDER BY lower(full_name) ASC'), [tenantId]);
@@ -11,6 +12,10 @@ export async function getCustomer(tenantId, id) {
   const customer = await get(customerSelect('WHERE tenant_id = ? AND id = ?'), [tenantId, Number(id)]);
   if (!customer) throw notFound('Customer not found.');
   return customer;
+}
+
+export function getCustomerByEmail(tenantId, email) {
+  return get(customerSelect('WHERE tenant_id = ? AND lower(email) = ?'), [tenantId, normalizeEmail(email)]);
 }
 
 export async function createCustomer(tenantId, payload) {
@@ -94,6 +99,7 @@ export async function getCustomer360(tenantId, id) {
     openTickets,
     latestTicket: tickets[0] || null,
     aiCustomerSummary: await getOrCreateCustomerSummary(customer),
+    risk: await getCustomerRisk(tenantId, customer.id),
     salesforceContactId: customer.salesforceContactId,
   };
 }
@@ -106,6 +112,16 @@ export async function syncContact(tenantId, id) {
   const salesforceContactId = await syncSalesforceContact(tenantId, customer);
   await run('UPDATE customers SET salesforce_contact_id = ?, updated_at = ? WHERE tenant_id = ? AND id = ?', [salesforceContactId, now(), tenantId, customer.id]);
   return { success: true, id: salesforceContactId, message: 'Customer synced to Salesforce.' };
+}
+
+export async function syncAccount(tenantId, id) {
+  const customer = await getCustomer(tenantId, id);
+  if (customer.salesforceAccountId) {
+    return { success: true, id: customer.salesforceAccountId, message: 'Customer already has a Salesforce Account ID.' };
+  }
+  const salesforceAccountId = await syncSalesforceAccount(tenantId, customer);
+  await run('UPDATE customers SET salesforce_account_id = ?, updated_at = ? WHERE tenant_id = ? AND id = ?', [salesforceAccountId, now(), tenantId, customer.id]);
+  return { success: true, id: salesforceAccountId, message: 'Customer synced to a Salesforce Account.' };
 }
 
 function validateCustomerPayload(payload) {
@@ -134,6 +150,7 @@ export function customerSelect(extra = '') {
       company_name AS "companyName",
       segment,
       salesforce_contact_id AS "salesforceContactId",
+      salesforce_account_id AS "salesforceAccountId",
       created_at AS "createdAt",
       updated_at AS "updatedAt"
     FROM customers ${extra}`;
@@ -151,10 +168,14 @@ export function ticketSelect(extra = '') {
       t.priority,
       t.sentiment,
       t.assigned_team AS "assignedTeam",
+      t.assigned_user_id AS "assignedUserId",
+      au.full_name AS "assignedUserName",
       t.status,
+      t.language,
       t.salesforce_case_id AS "salesforceCaseId",
       t.created_at AS "createdAt",
       t.updated_at AS "updatedAt"
     FROM tickets t
-    JOIN customers c ON c.id = t.customer_id ${extra}`;
+    JOIN customers c ON c.id = t.customer_id
+    LEFT JOIN users au ON au.id = t.assigned_user_id ${extra}`;
 }

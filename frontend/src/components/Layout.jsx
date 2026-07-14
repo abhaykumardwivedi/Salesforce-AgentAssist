@@ -1,12 +1,14 @@
-import { Activity, CloudLightning, LayoutDashboard, ListChecks, LogOut, Settings, TicketPlus, Users } from 'lucide-react';
+import { Activity, BarChart3, Bot, CloudLightning, LayoutDashboard, ListChecks, LogOut, Settings, TicketPlus, Users } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/copilot', label: 'Copilot', icon: Bot },
   { to: '/customers', label: 'Customers', icon: Users },
   { to: '/tickets/new', label: 'Create Ticket', icon: TicketPlus },
   { to: '/tickets', label: 'Tickets', icon: ListChecks },
+  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/logs', label: 'API Logs', icon: Activity },
   { to: '/salesforce', label: 'Salesforce', icon: CloudLightning },
   { to: '/settings', label: 'Settings', icon: Settings },

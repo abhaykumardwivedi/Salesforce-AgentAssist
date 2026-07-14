@@ -1,6 +1,9 @@
 import { all, dbMode, get, now, run } from '../database/db.js';
+import { detectLanguageHeuristic } from '../utils/language.js';
+import { redactModelInput } from '../utils/pii.js';
 import { logApiCall } from './logService.js';
 import { getIntegrationConfig } from './integrationService.js';
+import { getUsage, isOverQuota, recordAiUsage } from './usageService.js';
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
@@ -11,31 +14,42 @@ const CATEGORIES = ['BILLING', 'TECHNICAL', 'DELIVERY', 'ACCOUNT', 'REFUND', 'GE
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 const SENTIMENTS = ['POSITIVE', 'NEUTRAL', 'NEGATIVE'];
 
-async function resolveOpenAi(tenantId) {
+export async function resolveOpenAi(tenantId) {
   const tenantConfig = await getIntegrationConfig(tenantId, 'OPENAI');
+  let config = null;
   if (tenantConfig?.apiKey) {
-    return {
+    config = {
       enabled: true,
       source: 'tenant',
+      tenantId,
       apiKey: tenantConfig.apiKey,
       model: tenantConfig.model || DEFAULT_OPENAI_MODEL,
       embeddingModel: tenantConfig.embeddingModel || DEFAULT_EMBEDDING_MODEL,
     };
-  }
-  if (String(process.env.AI_PROVIDER || '').toLowerCase() === 'openai' && process.env.OPENAI_API_KEY) {
-    return {
+  } else if (String(process.env.AI_PROVIDER || '').toLowerCase() === 'openai' && process.env.OPENAI_API_KEY) {
+    config = {
       enabled: true,
       source: 'env',
+      tenantId,
       apiKey: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL,
       embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL,
     };
   }
-  return { enabled: false, source: 'local', model: 'local-rules', embeddingModel: null };
+
+  if (!config) return { enabled: false, source: 'local', model: 'local-rules', embeddingModel: null };
+
+  // Enforce the workspace's monthly AI budget. When exceeded, degrade to local
+  // rules instead of erroring — every feature has a no-AI fallback path.
+  if (await isOverQuota(tenantId)) {
+    return { enabled: false, source: 'quota', reason: 'QUOTA_EXCEEDED', model: 'local-rules', embeddingModel: null };
+  }
+  return config;
 }
 
 export async function getAiStatus(tenantId) {
   const openai = await resolveOpenAi(tenantId);
+  const usage = await getUsage(tenantId);
   return {
     provider: openai.enabled ? 'OpenAI' : 'Local Rules',
     mode: openai.enabled ? 'REAL' : 'LOCAL_FALLBACK',
@@ -44,6 +58,8 @@ export async function getAiStatus(tenantId) {
     model: openai.enabled ? openai.model : 'local-rules',
     embeddingsEnabled: openai.enabled && dbMode === 'postgres',
     embeddingModel: openai.enabled && dbMode === 'postgres' ? openai.embeddingModel : null,
+    quotaExceeded: openai.source === 'quota' || usage.exceeded,
+    usage,
   };
 }
 
@@ -134,8 +150,9 @@ async function classifyWithOpenAi(openai, description) {
         priority: { type: 'string', enum: PRIORITIES },
         sentiment: { type: 'string', enum: SENTIMENTS },
         assignedTeam: { type: 'string', minLength: 3, maxLength: 80 },
+        language: { type: 'string', minLength: 2, maxLength: 40 },
       },
-      required: ['category', 'priority', 'sentiment', 'assignedTeam'],
+      required: ['category', 'priority', 'sentiment', 'assignedTeam', 'language'],
     },
     input: [
       {
@@ -144,6 +161,7 @@ async function classifyWithOpenAi(openai, description) {
           'You classify customer support tickets for a Salesforce service team.',
           'Pick the most useful category, priority, sentiment, and assignment team.',
           'Use CRITICAL only for legal, fraud, security, production-down, or severe business-blocking issues.',
+          'Also detect the human language the ticket is written in and return its English name (e.g. English, Hindi, Spanish).',
         ].join(' '),
       },
       {
@@ -183,7 +201,41 @@ async function summarizeWithOpenAi(openai, customer, context) {
   });
 }
 
-async function callOpenAiJson(openai, { name, schema, input }) {
+// Generic free-text generation used by reply drafting, the copilot, and RAG
+// answers. Returns the model's plain text output.
+export async function generateText(openai, input, { maxOutputTokens } = {}) {
+  const data = await postOpenAi(openai, OPENAI_RESPONSES_URL, {
+    model: openai.model,
+    input,
+    ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
+  });
+  const text = extractOutputText(data);
+  if (!text) throw new Error('OpenAI returned an empty response.');
+  return text;
+}
+
+// Embeds a single string and returns the raw 1536-dim vector. Callers decide
+// how to store it (pgvector) or compare it (cosine).
+export async function embedText(openai, text) {
+  const data = await postOpenAi(openai, OPENAI_EMBEDDINGS_URL, {
+    model: openai.embeddingModel,
+    input: text,
+  });
+  const embedding = data.data?.[0]?.embedding;
+  if (!Array.isArray(embedding)) throw new Error('OpenAI returned no embedding vector.');
+  if (embedding.length !== 1536) {
+    throw new Error(`Embedding dimension ${embedding.length} does not match pgvector column dimension 1536.`);
+  }
+  return embedding;
+}
+
+// Low-level Responses API call for callers that manage their own input/tool
+// items (e.g. the copilot's function-calling loop). Returns the raw response.
+export function requestResponses(openai, body) {
+  return postOpenAi(openai, OPENAI_RESPONSES_URL, { model: openai.model, ...body });
+}
+
+export async function callOpenAiJson(openai, { name, schema, input }) {
   const data = await postOpenAi(openai, OPENAI_RESPONSES_URL, {
     model: openai.model,
     input,
@@ -210,15 +262,7 @@ async function storeEmbeddingIfAvailable(tenantId, openai, insightId, summary) {
 
   const started = Date.now();
   try {
-    const data = await postOpenAi(openai, OPENAI_EMBEDDINGS_URL, {
-      model: openai.embeddingModel,
-      input: summary,
-    });
-    const embedding = data.data?.[0]?.embedding;
-    if (!Array.isArray(embedding)) throw new Error('OpenAI returned no embedding vector.');
-    if (embedding.length !== 1536) {
-      throw new Error(`Embedding dimension ${embedding.length} does not match pgvector column dimension 1536.`);
-    }
+    const embedding = await embedText(openai, summary);
     await run('UPDATE ai_insights SET embedding = ? WHERE id = ? AND tenant_id = ?', [toVectorLiteral(embedding), Number(insightId), tenantId]);
     await logOpenAiCall(tenantId, '/v1/embeddings:customer-summary', started, true, 200);
   } catch (error) {
@@ -227,6 +271,10 @@ async function storeEmbeddingIfAvailable(tenantId, openai, insightId, summary) {
 }
 
 async function postOpenAi(openai, url, body) {
+  // Strip customer PII (emails/phones/cards) from anything sent to OpenAI, and
+  // meter the request against the tenant's monthly budget. This is the single
+  // egress point for every AI feature, so both guarantees hold everywhere.
+  const safeBody = redactModelInput(body);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(process.env.OPENAI_TIMEOUT_MS || 20000));
   try {
@@ -236,9 +284,10 @@ async function postOpenAi(openai, url, body) {
         Authorization: `Bearer ${openai.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(safeBody),
       signal: controller.signal,
     });
+    await recordAiUsage(openai.tenantId);
     const data = await parseJsonResponse(response);
     if (!response.ok) {
       const error = new Error(data.error?.message || data.raw || `OpenAI request failed with status ${response.status}.`);
@@ -261,7 +310,7 @@ async function parseJsonResponse(response) {
   }
 }
 
-function extractOutputText(data) {
+export function extractOutputText(data) {
   if (data.output_text) return data.output_text.trim();
   const text = data.output
     ?.flatMap((item) => item.content || [])
@@ -323,6 +372,7 @@ function normalizeClassification(value = {}) {
     priority: normalizeEnum(value.priority, PRIORITIES, 'MEDIUM'),
     sentiment: normalizeEnum(value.sentiment, SENTIMENTS, 'NEUTRAL'),
     assignedTeam: cleanText(value.assignedTeam, 'General Support', 80),
+    language: cleanText(value.language, 'English', 40),
   };
 }
 
@@ -359,7 +409,11 @@ function makeLocalInsight(customer, context) {
   };
 }
 
-function classifyLocally(description) {
+export function classifyLocally(description) {
+  return { ...classifyLocallyRules(description), language: detectLanguageHeuristic(description) };
+}
+
+function classifyLocallyRules(description) {
   const text = description.toLowerCase();
 
   if (containsAny(text, ['fraud', 'security', 'breach', 'legal', 'lawsuit', 'production down', 'charged multiple'])) {
@@ -415,11 +469,11 @@ function containsAny(text, keywords) {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
-function toVectorLiteral(embedding) {
+export function toVectorLiteral(embedding) {
   return `[${embedding.join(',')}]`;
 }
 
-function logOpenAiCall(tenantId, endpoint, started, success, statusCode, errorMessage) {
+export function logOpenAiCall(tenantId, endpoint, started, success, statusCode, errorMessage) {
   return logApiCall({
     tenantId,
     provider: 'OpenAI',
